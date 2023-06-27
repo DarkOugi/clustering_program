@@ -2,10 +2,7 @@ import re
 from nltk.corpus import stopwords
 from nltk.stem import SnowballStemmer
 import ru_core_news_md
-from scipy.cluster.hierarchy import dendrogram
 from sklearn.cluster import AgglomerativeClustering
-from matplotlib import pyplot as plt
-import numpy as np
 
 STOPWORD = stopwords.words(['russian', 'english'])
 
@@ -48,17 +45,26 @@ def stemming(data):
 
 
 def tf_idf(data: list):
-    size = len(data)
-    worlds = {}
+    all_documents = len(data)
+    words = {}
+    all_worlds = 0
     for string in data:
+        flag = []
         for word in string:
-            if word in worlds:
-                worlds[word] += 1
+            all_worlds += 1
+            if word in words:
+                words[word]['word'] += 1
+                if word not in flag:
+                    words[word]['document'] += 1
+                    flag.append(word)
             else:
-                worlds[word] = 1
-    for word in worlds:
-        worlds[word] /= size
-    return worlds
+                words[word] = {'word': 1,
+                               'document': 1}
+                flag.append(word)
+    tf_idf_words = {}
+    for word in words:
+        tf_idf_words[word] = (words[word]['word'] / all_worlds) * (words[word]['document'] / all_documents)
+    return tf_idf_words
 
 
 def create_vectorize_date(data: list, tf: dict, max_len: int):
@@ -77,31 +83,9 @@ def clustering(vec_data: list, n_cluster: int):
     return model
 
 
-def plot_dendrogram(model, **kwargs):
-    # Children of hierarchical clustering
-    children = model.children_
-
-    # Distances between each pair of children
-    # Since we don't have this information, we can use a uniform one for plotting
-    distance = np.arange(children.shape[0])
-
-    # The number of observations contained in each cluster level
-    no_of_observations = np.arange(2, children.shape[0] + 2)
-
-    # Create linkage matrix and then plot the dendrogram
-    linkage_matrix = np.column_stack([children, distance, no_of_observations]).astype(float)
-
-    # Plot the corresponding dendrogram
-    dendrogram(linkage_matrix, **kwargs)
-
-
 if __name__ == '__main__':
     path_file = input('Введите путь к файлу и имя файла: ')
     n_cluster = int(input('Введите количество кластеров: '))
-    model = clustering(create_vectorize_date(*preprocessing_text()), n_cluster) if path_file is '' else clustering(
+    model = clustering(create_vectorize_date(*preprocessing_text()), n_cluster) if path_file == '' else clustering(
         create_vectorize_date(*preprocessing_text(path_file)), n_cluster)
-    plt.title("Hierarchical Clustering Dendrogram")
-    # plot the top three levels of the dendrogram
-    plot_dendrogram(model, labels=model.labels_)
-    plt.xlabel("Number of points in node (or index of point if no parenthesis).")
-    plt.show()
+    print(model.labels_)
