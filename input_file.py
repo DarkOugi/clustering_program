@@ -1,13 +1,23 @@
 import re
+import os
+from datetime import datetime
+
+import ru_core_news_md
+import numpy as np
+
 from nltk.corpus import stopwords
 from nltk.stem import SnowballStemmer
-import ru_core_news_md
 from sklearn.cluster import AgglomerativeClustering
+from scipy.cluster.hierarchy import dendrogram
+from matplotlib import pyplot as plt
+
 
 STOPWORD = stopwords.words(['russian', 'english'])
+PATH = 'file\example_data.txt'
+PATH_SCRIPT = os.path.realpath(__file__)
 
 
-def preprocessing_text(path: str = 'file\example_data.txt'):
+def preprocessing_text(path: str = PATH):
     data = []
     nlp = ru_core_news_md.load()
     with open(path, 'r', encoding='utf-8') as f:
@@ -20,7 +30,7 @@ def preprocessing_text(path: str = 'file\example_data.txt'):
     return data, tf_idf(data), max_size(data)
 
 
-def max_size(data):
+def max_size(data: list):
     res = 0
     for string in data:
         if len(string) > res:
@@ -83,9 +93,64 @@ def clustering(vec_data: list, n_cluster: int):
     return model
 
 
+def get_distances(X: np.array, model: AgglomerativeClustering, mode: str = 'l2'):
+    distances = []
+    weights = []
+    children = model.children_
+    dims = (X.shape[1], 1)
+    distCache = {}
+    weightCache = {}
+    for childs in children:
+        c1 = X[childs[0]].reshape(dims)
+        c2 = X[childs[1]].reshape(dims)
+        c1Dist = 0
+        c1W = 1
+        c2Dist = 0
+        c2W = 1
+        if childs[0] in distCache.keys():
+            c1Dist = distCache[childs[0]]
+            c1W = weightCache[childs[0]]
+        if childs[1] in distCache.keys():
+            c2Dist = distCache[childs[1]]
+            c2W = weightCache[childs[1]]
+        d = np.linalg.norm(c1 - c2)
+        cc = ((c1W * c1) + (c2W * c2)) / (c1W + c2W)
+        X = np.vstack((X, cc.T))
+        newChild_id = X.shape[0] - 1
+        if mode == 'l2':
+            added_dist = (c1Dist ** 2 + c2Dist ** 2) ** 0.5
+            dNew = (d ** 2 + added_dist ** 2) ** 0.5
+        elif mode == 'max':
+            dNew = max(d, c1Dist, c2Dist)
+        elif mode == 'actual':
+            dNew = d
+        wNew = (c1W + c2W)
+        distCache[newChild_id] = dNew
+        weightCache[newChild_id] = wNew
+        distances.append(dNew)
+        weights.append(wNew)
+    return distances, weights
+
+
+def plot_dendrogram(data: np.array, model: AgglomerativeClustering, size: tuple = (20, 10),
+                    download: str = 'dendrogram'):
+    distance, weight = get_distances(data, model)
+    linkage_matrix = np.column_stack([model.children_, distance, weight]).astype(float)
+    plt.figure(figsize=size)
+    dendrogram(linkage_matrix)
+    cluster = model.n_clusters
+    data = datetime.today().strftime('%Y_%m_%d_%H_%M_%S')
+    file_name = PATH.split("\\")[-1].split('.')[0]
+    plt.savefig(f"{download}\date_{data}_clusters_{cluster}_namefile_{file_name}")
+    return download
+
+
 if __name__ == '__main__':
-    path_file = input('Введите путь к файлу и имя файла: ')
     n_cluster = int(input('Введите количество кластеров: '))
-    model = clustering(create_vectorize_date(*preprocessing_text()), n_cluster) if path_file == '' else clustering(
-        create_vectorize_date(*preprocessing_text(path_file)), n_cluster)
-    print(model.labels_)
+    data = np.array(create_vectorize_date(*preprocessing_text()))
+    model = clustering(data, n_cluster)
+    for inx, x in enumerate(model.labels_):
+        print(f'{inx + 1} строка принадлежит к {x} кластеру')
+    download = plot_dendrogram(data, model)
+    main_directory = '\\'.join(PATH_SCRIPT.split("\\")[:-1])
+    print(f'Изображение создано по пути {main_directory}\\{download}')
